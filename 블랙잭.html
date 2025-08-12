@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<title>CRT Blackjack — Bet & Bankroll Anim</title>
+<style>
+  :root{
+    --w:414px;
+    --bg:#000;
+    --grid:#0e2b12;
+    --line:#12ff7a;
+    --line-dim:#0a7a42;
+    --text:#b9ffd8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace}
+  body{display:flex;justify-content:center;align-items:flex-start;padding:12px}
+
+  /* CRT 프레임/효과 */
+  .crt{position:relative;width:var(--w);border-radius:18px;overflow:hidden;background:radial-gradient(120% 100% at 50% 0%, #03170a 0%, #010d06 45%, #000 100%);box-shadow:0 0 0 1px #083518,0 20px 60px rgba(0,0,0,.75)}
+  .crt:before{
+    content:"";position:absolute;inset:0;background:repeating-linear-gradient(to bottom, rgba(18,255,122,.08) 0 2px, rgba(0,0,0,.05) 2px 4px);
+    mix-blend-mode:screen;pointer-events:none;opacity:.7;animation:scan 6s linear infinite;
+  }
+  .crt:after{
+    content:"";position:absolute;inset:-20% -10%;background:radial-gradient(ellipse at center, rgba(18,255,122,.18) 0%, rgba(0,0,0,0) 60%);
+    filter:blur(8px);pointer-events:none;opacity:.85;animation:breath 3.5s ease-in-out infinite;
+  }
+  @keyframes scan{0%,100%{opacity:.72}8%{opacity:.78}50%{opacity:.66}54%{opacity:.82}70%{opacity:.7}}
+  @keyframes breath{0%,100%{opacity:.75;transform:scale(1)}50%{opacity:.95;transform:scale(1.02)}}
+
+  .top{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--grid)}
+  .panel{padding:10px;border-top:1px solid var(--grid);background:linear-gradient(180deg,#030f08,#020b06)}
+  .line{border:1px solid var(--line-dim);border-radius:12px;box-shadow:0 0 0 1px rgba(18,255,122,.08) inset}
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px dashed var(--grid);font-size:12px;color:#aaf2c9}
+  .flex{display:flex;gap:10px}
+
+  /* ===== 베팅 대시보드 ===== */
+  .dash{padding:12px}
+  .dash-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;color:#9cf7c8;font-size:12px}
+  .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .dash-item{background:rgba(2,23,7,.55);border:1px solid var(--line-dim);border-radius:12px;padding:8px}
+  .label{font-size:11px;color:#9feecb;margin-bottom:4px;opacity:.9}
+  .bet-big{font-size:28px;font-weight:900;letter-spacing:.5px;text-shadow:0 0 8px rgba(18,255,122,.35)}
+  .bank-big{font-size:20px;font-weight:800;opacity:.95}
+
+  /* ===== 중앙 초대형 베팅 포커스 ===== */
+  .focusmask{position:fixed;inset:0;background:rgba(0,0,0,.76);display:none;opacity:0;z-index:80;transition:opacity .25s ease}
+  .focusmask.show{display:block;opacity:1}
+  .focusmask.fadeOut{opacity:0}
+
+  .betfocus-wrap{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);opacity:0;z-index:90;display:none;transition:opacity .25s ease, transform .25s ease}
+  .betfocus-wrap.showFocus{display:block;opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .betfocus-wrap.fadeOut{opacity:0;transform:translate(-50%,-50%) scale(.95)}
+
+  .betfocus-card{
+    min-width:260px;max-width:86vw;text-align:center;padding:18px 20px;border-radius:16px;
+    border:2px solid var(--line);background:#03180d;box-shadow:0 0 0 2px rgba(18,255,122,.25) inset, 0 20px 60px rgba(0,0,0,.6);
+  }
+  .focus-title{font-size:12px;color:#aaf2c9;margin-bottom:6px}
+  .focus-amount{font-size:42px;font-weight:900;letter-spacing:.6px;line-height:1.15;text-shadow:0 0 12px rgba(18,255,122,.45)}
+  .focus-amount.pos{color:#12ff7a}
+  .focus-amount.neg{color:#ff6d6d;text-shadow:0 0 12px rgba(255,80,80,.35)}
+  .focus-sub{margin-top:6px;font-size:12px;color:#8feebc;opacity:.9}
+
+  /* ===== 숫자 변화 하이라이트(잔고 애니) ===== */
+  .num-up{color:#12ff7a;text-shadow:0 0 10px rgba(18,255,122,.35)}
+  .num-down{color:#ff6d6d;text-shadow:0 0 10px rgba(255,80,80,.35)}
+
+  /* ===== 카드 테이블 ===== */
+  .table{padding:10px}
+  .hand{flex:1;background:rgba(2,23,7,.55);border:1px solid var(--line-dim);border-radius:12px;padding:8px;position:relative}
+  .hand h4{margin:0 0 6px 0;font-size:12px;color:#8feebc}
+  .cards{display:flex;gap:8px;min-height:74px;flex-wrap:wrap}
+  .total{position:absolute;right:10px;top:8px;font-weight:900}
+  .total .bust{color:#ff6d6d}
+  .gridline{height:1px;background:linear-gradient(90deg,transparent 0,rgba(18,255,122,.18) 20%,rgba(18,255,122,.18) 80%,transparent 100%);margin:6px 0}
+  .badge{font-size:11px;border:1px solid var(--line);padding:2px 6px;border-radius:8px;color:#9af8c8}
+
+  /* 카드(직사각형 유지 + 느린 공개) */
+  .card{width:54px;height:76px;position:relative;perspective:900px;flex:0 0 auto}
+  .flip{position:absolute;left:0;top:0;width:100%;height:100%;transform-style:preserve-3d;transition:transform .85s ease}
+  .flip.show{transform:rotateY(180deg)}
+  .face{position:absolute;inset:0;border-radius:8px;backface-visibility:hidden;border:2px solid var(--line);background:#001408;box-shadow:0 0 10px rgba(18,255,122,.18) inset,0 0 18px rgba(18,255,122,.08)}
+  .front{transform:rotateY(180deg);display:flex;align-items:center;justify-content:center;font-weight:900;color:#eafff4;text-shadow:0 0 6px rgba(18,255,122,.7)}
+  .front.red{color:#ffd7d7;text-shadow:0 0 8px rgba(255,120,120,.6)}
+  .back:before{content:"";position:absolute;inset:0;border-radius:8px;background:repeating-linear-gradient(45deg, rgba(18,255,122,.15) 0 6px, rgba(4,28,15,.9) 6px 12px);filter:contrast(1.2) saturate(1.2)}
+  .pip{font-size:20px;margin-right:2px}
+  .suit{font-size:13px;opacity:.9}
+
+  /* 컨트롤(턴에 따라 표시) */
+  .controls{padding:10px}
+  .group{display:none}
+  .group.show{display:block}
+  .btnrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .btn{height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid var(--line);background:rgba(18,255,122,.06);color:#ccffe9;font-weight:900;cursor:pointer;user-select:none;box-shadow:0 0 10px rgba(18,255,122,.08) inset;letter-spacing:.4px}
+  .btn:active{transform:translateY(1px)}
+  .subrow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}
+  .chip{height:38px;border-radius:20px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:rgba(18,255,122,.05);font-weight:800;cursor:pointer}
+  .chip.sel{background:rgba(18,255,122,.12);box-shadow:0 0 0 1px rgba(18,255,122,.25) inset}
+  .sum{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:13px;color:#a8f2c9}
+</style>
+</head>
+<body>
+<div class="crt" id="app">
+  <div class="top">
+    <div style="font-weight:800;letter-spacing:.6px;text-shadow:0 0 6px rgba(18,255,122,.6)">BLACKJACK CRT</div>
+    <div style="font-size:12px;color:#9cf7c8">S17 · 3:2 · 6덱</div>
+  </div>
+
+  <!-- 상태/자금 -->
+  <div class="panel line">
+    <div class="hdr">
+      <div>라운드 <b id="roundNo">#1</b></div>
+      <div>잔고 <b id="bankroll">₩50,000</b></div>
+    </div>
+  </div>
+
+  <!-- 베팅 대시보드 -->
+  <div class="panel line dash" id="betDash">
+    <div class="dash-title">
+      <div>베팅 대시보드</div>
+      <div id="dashHint" style="color:#aaf2c9">베팅/정산 내역</div>
+    </div>
+    <div class="dash-grid">
+      <div class="dash-item">
+        <div class="label">이번 판 베팅</div>
+        <div class="bet-big" id="betBig">₩0</div>
+      </div>
+      <div class="dash-item">
+        <div class="label">현재 잔고</div>
+        <div class="bank-big" id="bankBig">₩50,000</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 테이블/진행 정보 -->
+  <div class="panel line">
+    <div class="table">
+      <div class="flex">
+        <div class="hand">
+          <h4>딜러 <span id="dealerSoft" style="font-size:10px;color:#aaf2c9"></span></h4>
+          <div class="cards" id="dealerCards"></div>
+          <div class="total" id="dealerTotal"></div>
+        </div>
+        <div class="hand">
+          <h4>플레이어 <span id="playerSoft" style="font-size:10px;color:#aaf2c9"></span></h4>
+          <div class="cards" id="playerCards"></div>
+          <div class="total" id="playerTotal"></div>
+        </div>
+      </div>
+      <div class="gridline"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="badge" id="shoeBadge">슈 잔량 100%</span>
+        <span class="badge" id="stateBadge">베팅</span>
+        <span class="badge" id="hintBadge">칩 선택 → 딜 시작</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 컨트롤 -->
+  <div class="panel line controls">
+    <!-- 베팅 턴 -->
+    <div class="group" id="betGroup">
+      <div class="btnrow" style="margin-bottom:8px">
+        <div class="btn" id="dealBtn">딜 시작</div>
+        <div class="btn" id="undoBtn">베팅 취소</div>
+        <div class="btn" id="repeatBtn">반복 베팅</div>
+      </div>
+      <div class="subrow">
+        <div class="chip" data-v="1000">₩1K</div>
+        <div class="chip" data-v="5000">₩5K</div>
+        <div class="chip sel" data-v="10000">₩10K</div>
+        <div class="chip" data-v="20000">₩20K</div>
+        <div class="chip" data-v="50000">₩50K</div>
+      </div>
+      <div class="sum">
+        <div>현재 베팅 <b id="betAmt">₩0</b></div>
+        <div>최소 ₩1,000 · 최대 ₩1,000,000</div>
+      </div>
+    </div>
+
+    <!-- 플레이 턴 -->
+    <div class="group" id="playGroup">
+      <div class="btnrow">
+        <div class="btn" id="hitBtn">히트</div>
+        <div class="btn" id="standBtn">스탠드</div>
+        <div class="btn" id="doubleBtn">더블</div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#9cf7c8" id="playHint">히트/스탠드/더블을 선택하십시오.</div>
+    </div>
+  </div>
+</div>
+
+<!-- 배경 분리 마스크 + 중앙 포커스 카드 -->
+<div class="focusmask" id="focusMask"></div>
+<div class="betfocus-wrap" id="betFocus">
+  <div class="betfocus-card">
+    <div class="focus-title">베팅 금액</div>
+    <div class="focus-amount" id="focusAmount">₩0</div>
+    <div class="focus-sub" id="focusSub"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  /* ===== 설정 ===== */
+  const DEAL_DELAY = 520;
+  const REVEAL_WAIT = 260;
+  const RESULT_HOLD = 2000;   // 결과 유지 2초
+  const PRE_SHOW_DELAY = 500; // 결과 표시 전 500ms 지연
+  const BANKROLL_ANIM = 1000; // 잔고 애니메이션 1초
+
+  /* ===== 상태 ===== */
+  let round=1, bankroll=50000, bet=0, lastBet=0;
+  let phase='betting'; // betting | player | dealer | settle
+  let canDouble=false;
+
+  const decks=6, suits=['♠','♥','♦','♣'];
+  let shoe=[];
+
+  /* ===== DOM ===== */
+  const $=(s,p=document)=>p.querySelector(s), $$=(s,p=document)=>[...p.querySelectorAll(s)];
+  const el={
+    roundNo:$('#roundNo'),bankroll:$('#bankroll'),betAmt:$('#betAmt'),
+    betBig:$('#betBig'), bankBig:$('#bankBig'),
+    dealerCards:$('#dealerCards'),playerCards:$('#playerCards'),
+    dealerTotal:$('#dealerTotal'),playerTotal:$('#playerTotal'),
+    dealerSoft:$('#dealerSoft'),playerSoft:$('#playerSoft'),
+    shoeBadge:$('#shoeBadge'),stateBadge:$('#stateBadge'),hintBadge:$('#hintBadge'),
+    dealBtn:$('#dealBtn'),undoBtn:$('#undoBtn'),repeatBtn:$('#repeatBtn'),
+    hitBtn:$('#hitBtn'),standBtn:$('#standBtn'),doubleBtn:$('#doubleBtn'),
+    betGroup:$('#betGroup'),playGroup:$('#playGroup'),
+    focusMask:$('#focusMask'), betFocus:$('#betFocus'), focusAmount:$('#focusAmount'), focusSub:$('#focusSub')
+  };
+  const KRW=n=>'₩'+Math.round(n).toLocaleString('ko-KR');
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+  /* ===== 슈 ===== */
+  function buildShoe(){
+    shoe.length=0;
+    for(let d=0; d<decks; d++){
+      for(let s=0; s<4; s++){
+        for(let r=1; r<=13; r++){
+          shoe.push({rank:r,suit:suits[s],val:r>=10?10:r});
+        }
+      }
+    }
+    for(let i=shoe.length-1;i>0;i--){
+      const j=(Math.random()*(i+1))|0; [shoe[i],shoe[j]]=[shoe[j],shoe[i]];
+    }
+    updateShoeBadge();
+  }
+  function updateShoeBadge(){
+    const pct=Math.round(100*shoe.length/(52*decks));
+    el.shoeBadge.textContent=`슈 잔량 ${pct}%`;
+  }
+  function draw(){
+    if(shoe.length<=30){ buildShoe(); }
+    updateShoeBadge();
+    return shoe.pop();
+  }
+
+  /* ===== 핸드 계산 ===== */
+  function handValue(cards){
+    let total=0, aces=0;
+    for(const c of cards){ total+=c.val; if(c.rank===1) aces++; }
+    let soft=false;
+    while(aces>0 && total+10<=21){ total+=10; aces--; soft=true; }
+    return {total,soft,blackjack:(cards.length===2 && total===21),bust:total>21};
+  }
+
+  /* ===== 카드 UI ===== */
+  function cardEl(card,faceUp){
+    const wrap=document.createElement('div'); wrap.className='card';
+    const flip=document.createElement('div'); flip.className='flip';
+    const back=document.createElement('div'); back.className='face back';
+    const front=document.createElement('div'); front.className='face front';
+    const red=(card.suit==='♥'||card.suit==='♦'); if(red) front.classList.add('red');
+    const pip=document.createElement('div'); pip.className='pip';
+    pip.textContent=(card.rank===1?'A':card.rank===11?'J':card.rank===12?'Q':card.rank===13?'K':card.rank);
+    const suit=document.createElement('span'); suit.className='suit'; suit.textContent=card.suit;
+    front.appendChild(pip); front.appendChild(suit);
+    flip.appendChild(back); flip.appendChild(front);
+    wrap.appendChild(flip);
+    setTimeout(()=>{ if(faceUp) flip.classList.add('show'); }, REVEAL_WAIT);
+    return wrap;
+  }
+  function revealDealerHole(){
+    const flip = el.dealerCards.querySelectorAll('.flip')[1];
+    if(flip) setTimeout(()=>flip.classList.add('show'), REVEAL_WAIT);
+  }
+  function clearHands(){
+    el.dealerCards.innerHTML=''; el.playerCards.innerHTML='';
+    el.dealerTotal.textContent=''; el.playerTotal.textContent='';
+    el.dealerSoft.textContent=''; el.playerSoft.textContent='';
+  }
+  function setTotals(dHand,pHand,hideDealer=false){
+    const dv=handValue(dHand), pv=handValue(pHand);
+    if(hideDealer){
+      el.dealerTotal.textContent='??'; el.dealerSoft.textContent='';
+    }else{
+      el.dealerTotal.innerHTML = `<span class="${dv.bust?'bust':''}">${dv.total}</span>`;
+      el.dealerSoft.textContent = dv.soft?'SOFT':'';
+    }
+    el.playerTotal.innerHTML = `<span class="${pv.bust?'bust':''}">${pv.total}</span>`;
+    el.playerSoft.textContent = pv.soft?'SOFT':'';
+    return {dv,pv};
+  }
+
+  /* ===== 중앙 베팅 포커스(지연/클릭해제/자동 페이드) ===== */
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function showFocusLayer(){
+    el.focusMask.classList.remove('fadeOut');
+    el.betFocus.classList.remove('fadeOut');
+    el.focusMask.classList.add('show');
+    el.betFocus.classList.add('showFocus');
+  }
+  async function hideFocusLayer(){
+    el.betFocus.classList.add('fadeOut');
+    el.focusMask.classList.add('fadeOut');
+    await sleep(260);
+    el.focusMask.classList.remove('show','fadeOut');
+    el.betFocus.classList.remove('showFocus','fadeOut');
+  }
+  async function showBetTransform(fromAmt, toAmt, label){
+    showFocusLayer();
+    el.focusAmount.classList.remove('pos','neg');
+    el.focusAmount.textContent = KRW(fromAmt);
+    el.focusSub.textContent = label || '';
+    if(toAmt>fromAmt) el.focusAmount.classList.add('pos');
+    if(toAmt<fromAmt) el.focusAmount.classList.add('neg');
+
+    const dur = 1200, start = performance.now();
+    await new Promise(resolve=>{
+      function step(now){
+        const t = Math.min(1, (now-start)/dur);
+        el.focusAmount.textContent = KRW(Math.round(lerp(fromAmt, toAmt, t)));
+        if(t<1) requestAnimationFrame(step); else resolve();
+      }
+      requestAnimationFrame(step);
+    });
+
+    // 유지 or 클릭 조기 종료
+    let closed=false;
+    const onClick=()=>{ if(!closed){ closed=true; } };
+    document.addEventListener('click', onClick, true);
+
+    const holdStart=performance.now();
+    await new Promise(resolve=>{
+      function tick(){
+        if(closed) return resolve();
+        if(performance.now()-holdStart>=RESULT_HOLD) return resolve();
+        requestAnimationFrame(tick);
+      }
+      tick();
+    });
+    document.removeEventListener('click', onClick, true);
+    await hideFocusLayer();
+  }
+
+  /* ===== 잔고 숫자 애니메이션(결과 이후) ===== */
+  async function animateBankroll(from,to,dur=BANKROLL_ANIM){
+    const up = to>from, down = to<from;
+    const els=[el.bankroll, el.bankBig];
+    els.forEach(e=>{
+      e.classList.remove('num-up','num-down');
+      if(up) e.classList.add('num-up');
+      if(down) e.classList.add('num-down');
+    });
+    const start=performance.now();
+    await new Promise(resolve=>{
+      function step(now){
+        const t=Math.min(1,(now-start)/dur);
+        const val=Math.round(lerp(from,to,t));
+        els.forEach(e=>e.textContent=KRW(val));
+        if(t<1) requestAnimationFrame(step); else resolve();
+      }
+      requestAnimationFrame(step);
+    });
+    // 강조 색상 복귀(짧게 유지)
+    setTimeout(()=>els.forEach(e=>e.classList.remove('num-up','num-down')), 400);
+  }
+
+  /* ===== UI 전환/표시 동기화 ===== */
+  function showGroup(which){
+    if(which==='bet'){
+      el.betGroup.classList.add('show'); el.playGroup.classList.remove('show');
+      el.stateBadge.textContent='베팅'; el.hintBadge.textContent='칩 선택 → 딜 시작';
+    }else if(which==='play'){
+      el.betGroup.classList.remove('show'); el.playGroup.classList.add('show');
+      el.stateBadge.textContent='플레이'; el.hintBadge.textContent='플레이 진행 중';
+    }else if(which==='dealer'){
+      el.betGroup.classList.remove('show'); el.playGroup.classList.remove('show');
+      el.stateBadge.textContent='딜러'; el.hintBadge.textContent='딜러 진행 중';
+    }
+  }
+  function updMoney(){
+    el.bankroll.textContent = KRW(bankroll);
+    el.bankBig.textContent  = KRW(bankroll);
+    el.betAmt.textContent   = KRW(bet);
+    el.betBig.textContent   = KRW(bet);
+  }
+
+  /* ===== 게임 루프 ===== */
+  let dHand=[], pHand=[];
+  async function startDeal(){
+    if(bet<1000) return;
+    phase='player'; canDouble=true; showGroup('play');
+    clearHands();
+
+    // P, D(up), P, D(hole)
+    pHand=[draw(), draw()];
+    dHand=[draw(), draw()];
+
+    el.playerCards.appendChild(cardEl(pHand[0],true));
+    await sleep(DEAL_DELAY);
+    el.dealerCards.appendChild(cardEl(dHand[0],true));
+    await sleep(DEAL_DELAY);
+    el.playerCards.appendChild(cardEl(pHand[1],true));
+    await sleep(DEAL_DELAY);
+    el.dealerCards.appendChild(cardEl(dHand[1],false));
+
+    setTotals(dHand,pHand,true);
+
+    const pv=handValue(pHand);
+    if(pv.blackjack){
+      revealDealerHole(); await sleep(DEAL_DELAY+200);
+      await settle('blackjackCheck', pv, handValue(dHand));
+    }
+  }
+  async function playerHit(){
+    if(phase!=='player') return;
+    canDouble=false;
+    const c=draw(); pHand.push(c);
+    el.playerCards.appendChild(cardEl(c,true));
+    await sleep(DEAL_DELAY+150);
+    const pv=handValue(pHand); setTotals(dHand,pHand,true);
+    if(pv.bust){
+      revealDealerHole(); await sleep(DEAL_DELAY);
+      await settle('playerBust', pv, handValue(dHand));
+    }
+  }
+  async function playerStand(){
+    if(phase!=='player') return;
+    canDouble=false; phase='dealer'; showGroup('dealer');
+    revealDealerHole(); await sleep(DEAL_DELAY);
+    await dealerPlay();
+  }
+  async function playerDouble(){
+    if(!(phase==='player' && canDouble)) return;
+    if(bankroll<bet) return;
+    bankroll-=bet; bet+=bet; updMoney();
+    canDouble=false;
+    await playerHit();
+    if(phase==='player'){ await playerStand(); }
+  }
+  async function dealerPlay(){
+    let dv=handValue(dHand); setTotals(dHand,pHand,false); await sleep(DEAL_DELAY);
+    while(dv.total<17){ // S17
+      const c=draw(); dHand.push(c);
+      el.dealerCards.appendChild(cardEl(c,true));
+      await sleep(DEAL_DELAY+150);
+      dv=handValue(dHand); setTotals(dHand,pHand,false);
+      if(dv.bust) break;
+    }
+    await settle('compare', handValue(pHand), dv);
+  }
+
+  async function settle(reason, pv, dv){
+    phase='settle';
+    const base=bet; let pay=0; let label='';
+    if(reason==='playerBust'){ pay=0; label='패배'; }
+    else if(reason==='blackjackCheck'){
+      if(dv.blackjack){ pay=base; label='푸시'; }
+      else { pay=base*2.5; label='블랙잭 승리'; }
+    }else{
+      if(dv.bust){ pay=base*2; label='딜러 버스트 승리'; }
+      else if(pv.total>dv.total){ pay=base*2; label='승리'; }
+      else if(pv.total<dv.total){ pay=0; label='패배'; }
+      else { pay=base; label='푸시'; }
+    }
+
+    // 결과 표시 전 500ms 지연
+    await sleep(PRE_SHOW_DELAY);
+
+    // 중앙 포커스(베팅액 → 결과액), 표시 유지/클릭해제 포함
+    await showBetTransform(base, pay, label);
+
+    // ===== 여기서 잔고 애니메이션 수행 =====
+    const oldBal = bankroll;              // 베팅 시점 이후의 현재 잔고
+    const newBal = bankroll + pay;        // 정산 후 잔고(원금 포함 수령액)
+    await animateBankroll(oldBal, newBal, BANKROLL_ANIM);
+    bankroll = newBal;
+
+    // 라운드 마감
+    bet=0; updMoney();
+    round++; el.roundNo.textContent='#'+round;
+    clearHands();
+    phase='betting'; showGroup('bet');
+  }
+
+  /* ===== 베팅 ===== */
+  function place(v){
+    if(phase!=='betting') return;
+    if(bankroll<v) return;
+    bankroll-=v; bet+=v; updMoney();
+  }
+  function undoBet(){ if(phase!=='betting') return; bankroll+=bet; bet=0; updMoney(); }
+  function repeatBet(){
+    if(lastBet<=0 || phase!=='betting' || bankroll<lastBet) return;
+    bankroll-=lastBet; bet+=lastBet; updMoney();
+  }
+
+  /* ===== 이벤트 ===== */
+  $$('.chip').forEach(c=>{
+    c.addEventListener('click', ()=>{ $$('.chip').forEach(x=>x.classList.remove('sel')); c.classList.add('sel'); place(+c.dataset.v); });
+  });
+  el.dealBtn.addEventListener('click', async ()=>{
+    if(bet<1000) return;
+    lastBet=bet; await startDeal();
+  });
+  el.undoBtn.addEventListener('click', undoBet);
+  el.repeatBtn.addEventListener('click', repeatBet);
+  el.hitBtn.addEventListener('click', playerHit);
+  el.standBtn.addEventListener('click', playerStand);
+  el.doubleBtn.addEventListener('click', playerDouble);
+
+  /* ===== 초기화 ===== */
+  function init(){ buildShoe(); updMoney(); showGroup('bet'); clearHands(); }
+  init();
+})();
+</script>
+</body>
+</html>
